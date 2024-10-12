@@ -1,119 +1,157 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import pandas as pd
 import os
+from typing import Dict, Any
 
-# Initialize bonus tracking (this would normally be loaded from the file)
-user_data = {}
+class LearningProgressTracker:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Learning Progress Tracker")
+        self.master.geometry("400x400")
+        self.master.resizable(False, False)
 
-# Excel file path
-excel_file = "user_progress.xlsx"
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
 
-# Check if the file exists; if not, create it with appropriate headers
-if not os.path.exists(excel_file):
-    df = pd.DataFrame(columns=['User', 'Week', 'Learning Points', 'Bonus', 'Application Points', 'Certificate Points',
-                               'Total Eval Points'])
-    df.to_excel(excel_file, index=False)
+        self.user_data: Dict[str, Dict[str, Any]] = {}
+        self.excel_file = "user_progress.xlsx"
+        self.initialize_excel()
 
+        self.create_widgets()
 
-def update_excel(user, week, learning_points, bonus, application_points, certificate_points, total_eval_points):
-    # Load the existing Excel file
-    df = pd.read_excel(excel_file)
+    def initialize_excel(self):
+        if not os.path.exists(self.excel_file):
+            df = pd.DataFrame(columns=['User', 'Week', 'Learning Points', 'Bonus', 'Application Points', 'Certificate Points', 'Total Eval Points'])
+            df.to_excel(self.excel_file, index=False)
 
-    # Create a new DataFrame with the new data, ensuring non-null values
-    new_data = pd.DataFrame({
-        'User': [user],
-        'Week': [week],
-        'Learning Points': [learning_points],
-        'Bonus': [bonus],
-        'Application Points': [application_points],
-        'Certificate Points': [certificate_points],
-        'Total Eval Points': [total_eval_points]
-    })
+    def create_widgets(self):
+        main_frame = ttk.Frame(self.master, padding="10")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
-    # Ensure the dtypes of new_data match the existing DataFrame
-    for col in df.columns:
-        new_data[col] = new_data[col].astype(df[col].dtype)
+        labels = ["User", "Week", "Learning Hours", "Application Hours", "Certificates"]
+        self.entries = {}
 
-    # Concatenate the existing DataFrame with the new data
-    df = pd.concat([df, new_data], ignore_index=True)
+        for i, label in enumerate(labels):
+            ttk.Label(main_frame, text=label).grid(row=i, column=0, sticky=tk.W, pady=5)
+            self.entries[label] = ttk.Entry(main_frame, width=30)
+            self.entries[label].grid(row=i, column=1, sticky=tk.W, pady=5)
 
-    # Save back to the Excel file
-    df.to_excel(excel_file, index=False)
+        calculate_button = ttk.Button(main_frame, text="Calculate", command=self.calculate_points)
+        calculate_button.grid(row=len(labels), column=1, sticky=tk.E, pady=10)
 
+        view_history_button = ttk.Button(main_frame, text="View History", command=self.view_history)
+        view_history_button.grid(row=len(labels)+1, column=1, sticky=tk.E, pady=10)
 
-def calculate_points():
-    global user_data
+        # Progress bar
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(main_frame, orient="horizontal", length=300, mode="determinate", maximum=1000, variable=self.progress_var)
+        self.progress_bar.grid(row=len(labels)+2, column=0, columnspan=2, pady=10)
 
-    user = user_entry.get()
-    week = int(week_entry.get())
-    learning_hours = float(learning_entry.get())
-    application_hours = float(application_entry.get())
-    certificates = int(certificate_entry.get())
+    def update_excel(self, user, week, learning_points, bonus, application_points, certificate_points, total_eval_points):
+        df = pd.read_excel(self.excel_file)
+        new_data = pd.DataFrame({
+            'User': [user], 'Week': [week], 'Learning Points': [learning_points],
+            'Bonus': [bonus], 'Application Points': [application_points],
+            'Certificate Points': [certificate_points], 'Total Eval Points': [total_eval_points]
+        })
+        for col in df.columns:
+            new_data[col] = new_data[col].astype(df[col].dtype)
+        df = pd.concat([df, new_data], ignore_index=True)
+        df.to_excel(self.excel_file, index=False)
 
-    # Get or initialize user data
-    if user not in user_data:
-        user_data[user] = {"bonus": 0, "last_week_points": 0}
+    def calculate_points(self):
+        try:
+            user = self.entries["User"].get()
+            week = int(self.entries["Week"].get())
+            learning_hours = float(self.entries["Learning Hours"].get())
+            application_hours = float(self.entries["Application Hours"].get())
+            certificates = int(self.entries["Certificates"].get())
 
-    # Fetch user's last week bonus
-    bonus = user_data[user]["bonus"]
+            if user not in self.user_data:
+                self.user_data[user] = {"bonus": 0, "last_week_points": 0}
 
-    # Calculate learning points
-    decay_rate = 0.9
-    learning_points = (learning_hours ** 0.8) * 100 * decay_rate
+            bonus = self.user_data[user]["bonus"]
+            decay_rate = 0.9
+            learning_points = (learning_hours ** 0.8) * 100 * decay_rate
+            learning_points += bonus * 0.02
+            application_points = (application_hours ** 0.9) * 120
+            certificate_points = (500 / (certificates + 1)) ** 0.5
+            total_eval_points = learning_points + application_points + certificate_points
 
-    # Apply bonus from previous weeks
-    learning_points += bonus * 0.02  # 2% bonus from previous week
+            bonus = learning_points if learning_hours > 0 else bonus * 0.9
 
-    # Application points
-    application_points = (application_hours ** 0.9) * 120
+            # Round all points to whole numbers for clarity
+            learning_points = round(learning_points)
+            application_points = round(application_points)
+            certificate_points = round(certificate_points)
+            total_eval_points = round(total_eval_points)
+            bonus = round(bonus)
 
-    # Certificate points
-    certificate_points = (500 / (certificates + 1)) ** 0.5
+            self.user_data[user]["bonus"] = bonus
+            self.user_data[user]["last_week_points"] = total_eval_points
 
-    # Total eval points
-    total_eval_points = learning_points + application_points + certificate_points
+            self.update_excel(user, week, learning_points, bonus, application_points, certificate_points, total_eval_points)
 
-    # Update bonus (if no learning, apply decay)
-    if learning_hours == 0:
-        bonus *= 0.9  # Decay by 10%
-    else:
-        bonus = learning_points
+            # Determine performance feedback
+            if total_eval_points >= 800:
+                performance_feedback = "Excellent"
+            elif total_eval_points >= 600:
+                performance_feedback = "Good"
+            elif total_eval_points >= 400:
+                performance_feedback = "Average"
+            else:
+                performance_feedback = "Needs Improvement"
 
-    # Update user data for tracking
-    user_data[user]["bonus"] = bonus
-    user_data[user]["last_week_points"] = total_eval_points
+            # Update the progress bar (scale to a max of 1000 points)
+            self.progress_var.set(min(total_eval_points, 1000))  # Cap at 1000 for the scale
 
-    # Update the Excel file with current week's data
-    update_excel(user, week, learning_points, bonus, application_points, certificate_points, total_eval_points)
+            messagebox.showinfo(
+                "Result",
+                f"User: {user}\n"
+                f"Week: {week}\n\n"
+                f"Learning Points: {learning_points}\n"
+                f"Application Points: {application_points}\n"
+                f"Certificate Points: {certificate_points}\n"
+                f"---------------------------\n"
+                f"Total Evaluation Points: {total_eval_points}\n"
+                f"Performance: {performance_feedback}\n"
+                f"Bonus for Next Week: {bonus}"
+            )
+        except ValueError:
+            messagebox.showerror("Error", "Please enter valid numeric values for all fields.")
 
-    # Show result in messagebox
-    messagebox.showinfo("Result", f"User: {user}\nTotal Eval Points: {total_eval_points:.3f}")
+    def view_history(self):
+        user = self.entries["User"].get()
+        if not user:
+            messagebox.showerror("Error", "Please enter a username to view history.")
+            return
 
+        df = pd.read_excel(self.excel_file)
+        user_data = df[df['User'] == user]
 
-# GUI
-root = tk.Tk()
-root.title("Learning Progress Tracker")
+        if user_data.empty:
+            messagebox.showinfo("History", f"No history found for user: {user}")
+        else:
+            history_window = tk.Toplevel(self.master)
+            history_window.title(f"History for {user}")
+            history_window.geometry("600x400")
 
-tk.Label(root, text="User").grid(row=0, column=0)
-tk.Label(root, text="Week").grid(row=1, column=0)
-tk.Label(root, text="Learning Hours").grid(row=2, column=0)
-tk.Label(root, text="Application Hours").grid(row=3, column=0)
-tk.Label(root, text="Certificates").grid(row=4, column=0)
+            tree = ttk.Treeview(history_window, columns=list(df.columns), show='headings')
+            for col in df.columns:
+                tree.heading(col, text=col)
+                tree.column(col, width=100)
 
-user_entry = tk.Entry(root)
-week_entry = tk.Entry(root)
-learning_entry = tk.Entry(root)
-application_entry = tk.Entry(root)
-certificate_entry = tk.Entry(root)
+            for _, row in user_data.iterrows():
+                tree.insert("", "end", values=list(row))
 
-user_entry.grid(row=0, column=1)
-week_entry.grid(row=1, column=1)
-learning_entry.grid(row=2, column=1)
-application_entry.grid(row=3, column=1)
-certificate_entry.grid(row=4, column=1)
+            tree.pack(expand=True, fill='both')
 
-calculate_button = tk.Button(root, text="Calculate", command=calculate_points)
-calculate_button.grid(row=5, column=1)
+            scrollbar = ttk.Scrollbar(history_window, orient="vertical", command=tree.yview)
+            scrollbar.pack(side='right', fill='y')
+            tree.configure(yscrollcommand=scrollbar.set)
 
-root.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = LearningProgressTracker(root)
+    root.mainloop()
