@@ -100,6 +100,12 @@ class LearningProgressTracker:
             application_hours = float(self.entries["Application Hours"].get())
             certificates = int(self.entries["Certificates"].get())
 
+            # Check if this user already has data for the same week
+            df = pd.read_excel(self.excel_file)
+            if not df[(df['User'] == user) & (df['Week'] == week)].empty:
+                messagebox.showerror("Error", f"Data for user {user} in week {week} already exists!")
+                return  # Exit the function to prevent duplicate entry
+
             if user not in self.user_data:
                 self.user_data[user] = {"bonus": 0, "total_points": 0, "last_week_points": 0}
 
@@ -125,7 +131,8 @@ class LearningProgressTracker:
             self.user_data[user]["last_week_points"] = total_eval_points
             self.user_data[user]["total_points"] += total_eval_points
 
-            self.update_excel(user, week, learning_points, bonus, application_points, certificate_points, total_eval_points)
+            self.update_excel(user, week, learning_points, bonus, application_points, certificate_points,
+                              total_eval_points)
 
             # Determine performance feedback
             if total_eval_points >= 800:
@@ -138,7 +145,8 @@ class LearningProgressTracker:
                 performance_feedback = "Needs Improvement"
 
             # Update the progress bar and label
-            capped_points = min(self.user_data[user]["total_points"], self.max_points_per_week)  # Cap at max_points_per_week
+            capped_points = min(self.user_data[user]["total_points"],
+                                self.max_points_per_week)  # Cap at max_points_per_week
             self.progress_var.set(capped_points)  # Update the progress bar value
 
             # Update the progress label to show total points, even if exceeding the cap
